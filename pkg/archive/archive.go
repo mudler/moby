@@ -63,8 +63,9 @@ type (
 		NoOverwriteDirNonDir bool
 		// For each include when creating an archive, the included name will be
 		// replaced with the matching name from this map.
-		RebaseNames map[string]string
-		InUserNS    bool
+		RebaseNames     map[string]string
+		InUserNS        bool
+		ContinueOnError bool
 	}
 )
 
@@ -570,7 +571,7 @@ func (ta *tarAppender) addTarFile(path, name string) error {
 	return nil
 }
 
-func createTarFile(path, extractDir string, hdr *tar.Header, reader io.Reader, Lchown bool, chownOpts *idtools.Identity, inUserns bool) error {
+func createTarFile(path, extractDir string, hdr *tar.Header, reader io.Reader, Lchown bool, chownOpts *idtools.Identity, inUserns, ContinueOnError bool) error {
 	// hdr.Mode is in linux format, which we can use for sycalls,
 	// but for os.Foo() calls we need the mode converted to os.FileMode,
 	// so use hdrInfo.Mode() (they differ for e.g. setuid bits)
@@ -581,7 +582,7 @@ func createTarFile(path, extractDir string, hdr *tar.Header, reader io.Reader, L
 		// Create directory unless it exists as a directory already.
 		// In that case we just want to merge the two
 		if fi, err := os.Lstat(path); !(err == nil && fi.IsDir()) {
-			if err := os.Mkdir(path, hdrInfo.Mode()); err != nil {
+			if err := os.Mkdir(path, hdrInfo.Mode()); err != nil && !ContinueOnError {
 				return err
 			}
 		}
@@ -937,7 +938,7 @@ loop:
 			parentPath := filepath.Join(dest, parent)
 			if _, err := os.Lstat(parentPath); err != nil && os.IsNotExist(err) {
 				err = idtools.MkdirAllAndChownNew(parentPath, 0777, rootIDs)
-				if err != nil {
+				if err != nil && !options.ContinueOnError {
 					return err
 				}
 			}
@@ -995,7 +996,7 @@ loop:
 			}
 		}
 
-		if err := createTarFile(path, dest, hdr, trBuf, !options.NoLchown, options.ChownOpts, options.InUserNS); err != nil {
+		if err := createTarFile(path, dest, hdr, trBuf, !options.NoLchown, options.ChownOpts, options.InUserNS, options.ContinueOnError); err != nil {
 			return err
 		}
 
